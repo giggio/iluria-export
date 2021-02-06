@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use clap::{App, AppSettings, Arg};
 
 #[derive(Debug)]
@@ -5,6 +7,10 @@ pub struct Args {
     pub verbose: bool,
     pub file: String,
     pub url: String,
+    pub limit: u32,
+    pub output_dir: Option<String>,
+    pub output_products_file: String,
+    pub output_variations_file: String,
 }
 
 impl Args {
@@ -37,7 +43,7 @@ impl Args {
                         if path.exists() && path.is_file() {
                             Ok(())
                         } else {
-                            Err(format!("File '{}' does not exist", file))
+                            Err(format!("Input file '{}' does not exist", file))
                         }
                     }),
             )
@@ -67,6 +73,51 @@ impl Args {
                     }),
             )
             .arg(
+                Arg::with_name("limit")
+                    .short("l")
+                    .long("limit")
+                    .takes_value(true)
+                    .required(false)
+                    .help("How many item to process, by default all items will be processed")
+                    .validator(|l| {
+                        l.parse::<u32>()
+                            .map(|_| ())
+                            .map_err(|_| "Limit has to be an integer".to_owned())
+                    }),
+            )
+            .arg(
+                Arg::with_name("output")
+                    .short("o")
+                    .long("output")
+                    .takes_value(true)
+                    .required(false)
+                    .help("Sets the output files directory, if not informed output will be printed to screen")
+                    .validator(|dir| {
+                        let path = std::path::Path::new(&dir);
+                        if path.exists() && path.is_dir() {
+                            Ok(())
+                        } else {
+                            Err(format!("Output directory '{}' does not exist", dir))
+                        }
+                    }),
+            )
+            .arg(
+                Arg::with_name("products-file")
+                    .short("p")
+                    .long("products-file")
+                    .takes_value(true)
+                    .requires("output")
+                    .help("Sets the output file name for the products file")
+            )
+            .arg(
+                Arg::with_name("variations-file")
+                    .short("r")
+                    .long("variations-file")
+                    .takes_value(true)
+                    .requires("output")
+                    .help("Sets the output file name for the variations file")
+            )
+            .arg(
                 Arg::with_name("v")
                     .short("v")
                     .long("verbose")
@@ -86,7 +137,52 @@ impl Args {
             .value_of("url")
             .expect("Should have url as it is required")
             .to_owned();
-        Args { verbose, file, url }
+        let limit = match args.value_of("limit") {
+            Some(l) => l.parse::<u32>().expect("Limit should be a number."),
+            None => 0,
+        };
+        Args {
+            verbose,
+            file,
+            url,
+            limit,
+            output_dir: args.value_of("output").map(|s| s.to_owned()),
+            output_products_file: args
+                .value_of("products-file")
+                .or(Some("products.csv"))
+                .unwrap()
+                .to_owned(),
+            output_variations_file: args
+                .value_of("variations-file")
+                .or(Some("variations.csv"))
+                .unwrap()
+                .to_owned(),
+        }
+    }
+
+    pub fn get_output_files(&self) -> (Option<String>, Option<String>) {
+        match &self.output_dir {
+            None => (None, None),
+            Some(output) => {
+                let output_path = Path::new(output);
+                (
+                    Some(
+                        output_path
+                            .join(&self.output_products_file)
+                            .to_string_lossy()
+                            .as_ref()
+                            .to_owned(),
+                    ),
+                    Some(
+                        output_path
+                            .join(&self.output_variations_file)
+                            .to_string_lossy()
+                            .as_ref()
+                            .to_owned(),
+                    ),
+                )
+            }
+        }
     }
 }
 

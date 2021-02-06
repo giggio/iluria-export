@@ -1,17 +1,21 @@
 use crate::args::Args;
 use scraper::{Html, Selector};
-use serde::{de, Deserialize, Deserializer};
+use serde::{de, Deserialize, Deserializer, Serialize};
 use std::io::Read;
-use std::{fs::File, num::ParseFloatError};
+use std::{
+    fs::{self, File},
+    num::ParseFloatError,
+};
 
 pub fn run(args: Args) -> Result<(), Option<String>> {
     let products_with_variation = get_products_with_variations(&args.file)?;
     for product_with_variation in products_with_variation.iter() {
-        println!("{:?}", product_with_variation);
+        printlnv!("{:?}", product_with_variation);
     }
-    let mut products = get_products_from_variations(products_with_variation);
-    enrich_products(args.url, &mut products)?;
-    save_enriched_products_to_file(products)?;
+    let mut products = get_products_from_variations(products_with_variation, args.limit);
+    enrich_products(&args.url, &mut products)?;
+    let (products_file, variations_file) = args.get_output_files();
+    save_enriched_products_to_file(products, products_file, variations_file)?;
     Ok(())
 }
 
@@ -25,7 +29,7 @@ fn get_products_with_variations(file: &str) -> Result<Vec<ProductWithVariation>,
     let file = File::open(&std::path::Path::new(file))
         .map_err(|err| format!("Error when opening summary file: {}", err))?;
     let file_contents =
-        convert_enconding(file).map_err(|e| format!("Could not read text file: {}", e))?;
+        open_file_and_decode(file).map_err(|e| format!("Could not read text file: {}", e))?;
     let mut rdr = csv::ReaderBuilder::new()
         .delimiter(b';')
         .from_reader(file_contents.as_bytes());
@@ -38,7 +42,7 @@ fn get_products_with_variations(file: &str) -> Result<Vec<ProductWithVariation>,
     Ok(products)
 }
 
-fn convert_enconding(file: File) -> std::io::Result<String> {
+fn open_file_and_decode(file: File) -> std::io::Result<String> {
     let mut decoder = encoding_rs_io::DecodeReaderBytesBuilder::new()
         .encoding(Some(encoding_rs::WINDOWS_1252))
         .build(&file);
@@ -47,8 +51,13 @@ fn convert_enconding(file: File) -> std::io::Result<String> {
     Ok(contents)
 }
 
+fn encode_ansi(str: String) -> Vec<u8> {
+    encoding_rs::WINDOWS_1252.encode(&str).0.to_vec()
+}
+
 fn get_products_from_variations(
     products_with_variation: Vec<ProductWithVariation>,
+    limit: u32,
 ) -> Vec<Product> {
     products_with_variation
         .into_iter()
@@ -61,7 +70,8 @@ fn get_products_from_variations(
             let product_id = product_with_variation.produto;
             if let Some(product) = ps.iter_mut().find(|p2| p2.id == product_id) {
                 product.variations.push(variation);
-            } else {
+            } else if limit == 0 || (ps.len() as u32) < limit {
+                // todo: work around usize limit in products, see ps.len above
                 ps.push(Product {
                     id: product_id,
                     name: product_with_variation.nome,
@@ -80,7 +90,7 @@ fn get_products_from_variations(
         })
 }
 
-fn enrich_products(base_url: String, products: &mut Vec<Product>) -> Result<(), String> {
+fn enrich_products(base_url: &str, products: &mut Vec<Product>) -> Result<(), String> {
     for product in products.iter_mut() {
         let url = format!("{}/pd-{}", base_url, product.id);
         printlnv!("Making web request at: {}", url);
@@ -147,11 +157,114 @@ fn enrich_products(base_url: String, products: &mut Vec<Product>) -> Result<(), 
     Ok(())
 }
 
-fn save_enriched_products_to_file(products: Vec<Product>) -> Result<(), String> {
-    for product in products.into_iter() {
-        println!("{:?}", product);
+fn save_enriched_products_to_file(
+    products: Vec<Product>,
+    products_file: Option<String>,
+    variations_file: Option<String>,
+) -> Result<(), String> {
+    let mut i: u32 = 0;
+    let (product_export, variation_export) = products
+        .into_iter()
+        .map(|p| {
+            i += 1;
+            let len = p.pictures.len();
+            let mut pics = p.pictures;
+            let picture1 = if len > 0 {
+                pics.remove(0)
+            } else {
+                "".to_owned()
+            };
+            let picture2 = if len > 0 {
+                pics.remove(0)
+            } else {
+                "".to_owned()
+            };
+            let picture3 = if len > 0 {
+                pics.remove(0)
+            } else {
+                "".to_owned()
+            };
+            let picture4 = if len > 0 {
+                pics.remove(0)
+            } else {
+                "".to_owned()
+            };
+            let picture5 = if len > 0 {
+                pics.remove(0)
+            } else {
+                "".to_owned()
+            };
+            (
+                ProductCsvExport {
+                    id: i.to_string(),
+                    name: p.name,
+                    stock: p.stock,
+                    price: p.price,
+                    price_cost: p.price_cost,
+                    vendor_name: p.vendor_name,
+                    description: p.description.trim().to_owned(),
+                    category: p.category,
+                    subcategory: p.subcategory,
+                    picture1,
+                    picture2,
+                    picture3,
+                    picture4,
+                    picture5,
+                },
+                p.variations
+                    .into_iter()
+                    .filter_map(|v| {
+                        if v.one.is_empty() {
+                            None
+                        } else {
+                            Some(VariationCsvExport {
+                                product_id: i.to_string(),
+                                type1: "var1".to_owned(),
+                                name1: v.one,
+                                type2: if v.two.is_empty() {
+                                    None
+                                } else {
+                                    Some("var2".to_owned())
+                                },
+                                name2: if v.two.is_empty() { None } else { Some(v.two) },
+                            })
+                        }
+                    })
+                    .collect::<Vec<VariationCsvExport>>(),
+            )
+        })
+        .fold((vec![], vec![]), |(mut ps, mut vss), (p, mut vs)| {
+            ps.push(p);
+            vss.append(&mut vs);
+            (ps, vss)
+        });
+    let mut product_wtr = csv::Writer::from_writer(vec![]);
+    for p in product_export.into_iter() {
+        product_wtr
+            .serialize(&p)
+            .map_err(|e| format!("Could not serialize product {:?}. Details: {}", &p, e))?;
     }
-    todo!()
+    let product_text = String::from_utf8(product_wtr.into_inner().map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    match products_file {
+        None => println!("Products:\n{}", product_text),
+        Some(file) => fs::write(file, encode_ansi(product_text))
+            .map_err(|e| format!("Error products writing file: {}", e))?,
+    }
+    let mut variation_wtr = csv::Writer::from_writer(vec![]);
+    for v in variation_export.into_iter() {
+        variation_wtr
+            .serialize(&v)
+            .map_err(|e| format!("Could not serialize variation {:?}. Details: {}", &v, e))?;
+    }
+    let variation_text = String::from_utf8(variation_wtr.into_inner().map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    match variations_file {
+        None => println!("Variations:\n{}", variation_text),
+        Some(file) => fs::write(file, encode_ansi(variation_text))
+            .map_err(|e| format!("Error variations writing file: {}", e))?,
+    }
+    Ok(())
 }
 
 fn number_with_comma<'de, D>(deserializer: D) -> Result<f64, D::Error>
@@ -218,4 +331,31 @@ struct Variation {
     one: String,
     two: String,
     three: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ProductCsvExport {
+    id: String,
+    name: String,
+    stock: Option<u32>,
+    price: f64,
+    price_cost: Option<f64>,
+    vendor_name: String,
+    description: String,
+    category: String,
+    subcategory: String,
+    picture1: String,
+    picture2: String,
+    picture3: String,
+    picture4: String,
+    picture5: String,
+}
+
+#[derive(Debug, Serialize)]
+struct VariationCsvExport {
+    product_id: String,
+    type1: String,
+    name1: String,
+    type2: Option<String>,
+    name2: Option<String>,
 }
