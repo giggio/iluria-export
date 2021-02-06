@@ -37,7 +37,7 @@ impl Args {
                         if path.exists() && path.is_file() {
                             Ok(())
                         } else {
-                            Err("File does not exist".to_owned())
+                            Err(format!("File '{}' does not exist", file))
                         }
                     }),
             )

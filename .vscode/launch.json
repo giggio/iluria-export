@@ -1,0 +1,49 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'iluria-export'",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=iluria-export",
+          "--package=iluria-export"
+        ],
+        "filter": {
+          "name": "iluria-export",
+          "kind": "bin"
+        }
+      },
+      "args": [
+        "${workspaceFolder}/../iluria-relatorio-de-estoque-dos-produtos.csv",
+        "https://loja.studiooh.com.br",
+        "--verbose"
+      ],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'iluria-export'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=iluria-export",
+          "--package=iluria-export"
+        ],
+        "filter": {
+          "name": "iluria-export",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

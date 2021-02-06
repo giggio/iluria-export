@@ -1,4 +1,5 @@
 use crate::args::Args;
+use scraper::{Html, Selector};
 use serde::{de, Deserialize, Deserializer};
 use std::io::Read;
 use std::{fs::File, num::ParseFloatError};
@@ -8,8 +9,8 @@ pub fn run(args: Args) -> Result<(), Option<String>> {
     for product_with_variation in products_with_variation.iter() {
         println!("{:?}", product_with_variation);
     }
-    let products = get_products_from_variations(products_with_variation);
-    enrich_products(&products)?;
+    let mut products = get_products_from_variations(products_with_variation);
+    enrich_products(args.url, &mut products)?;
     save_enriched_products_to_file(products)?;
     Ok(())
 }
@@ -69,14 +70,81 @@ fn get_products_from_variations(
                     price: product_with_variation.preco,
                     price_cost: product_with_variation.preco_de_custo,
                     vendor_name: product_with_variation.nome_do_fornecedor,
+                    description: "".to_owned(),
+                    category: "".to_owned(),
+                    subcategory: "".to_owned(),
+                    pictures: vec![],
                 });
             }
             ps
         })
 }
 
-fn enrich_products(products: &Vec<Product>) -> Result<(), String> {
-    todo!()
+fn enrich_products(base_url: String, products: &mut Vec<Product>) -> Result<(), String> {
+    for product in products.iter_mut() {
+        let url = format!("{}/pd-{}", base_url, product.id);
+        printlnv!("Making web request at: {}", url);
+        let client = reqwest::blocking::Client::new();
+        let resp = client
+            .get(&url)
+            .header("user-agent", "Mozilla/5.0")
+            .send()
+            .map_err(|e| format!("Could not get at {}. Details: {}", url, e))?;
+        if !resp.status().is_success() {
+            return Err(format!(
+                "Request for product {} failed with status code {}",
+                product.id,
+                resp.status()
+            ));
+        }
+        let body = resp
+            .text()
+            .map_err(|e| format!("Could not get body: {}", e))?;
+        let fragment = Html::parse_document(&body);
+        let description_selector =
+            Selector::parse("div:not([id]).product-description").map_err(|e| {
+                format!(
+                    "Could not get description for product {}: {:?}",
+                    product.id, e
+                )
+            })?;
+        let description: String = if let Some(d) = fragment.select(&description_selector).next() {
+            // d.text().collect()
+            d.inner_html()
+        } else {
+            "".to_owned()
+        };
+        product.description = description;
+        let category_selector = Selector::parse(".breadcrumb a")
+            .map_err(|e| format!("Could not get category for product {}: {:?}", product.id, e))?;
+        let category_and_subcategory: Vec<_> =
+            fragment.select(&category_selector).skip(2).collect();
+        product.category = if !category_and_subcategory.is_empty() {
+            category_and_subcategory[0].text().collect()
+        } else {
+            "".to_owned()
+        };
+        product.subcategory = if category_and_subcategory.len() == 2 {
+            category_and_subcategory[1].text().collect()
+        } else {
+            "".to_owned()
+        };
+        let images_selector = Selector::parse("#thumbsContainer img")
+            .map_err(|e| format!("Could not get images for product {}: {:?}", product.id, e))?;
+        product.pictures = fragment
+            .select(&images_selector)
+            .filter_map(|i| i.value().attr("mainpictureurl"))
+            .map(|s| {
+                if s.starts_with('/') {
+                    format!("http:{}", s)
+                } else {
+                    s.to_owned()
+                }
+            })
+            .collect();
+        printlnv!("Enriched product: {:?}", product);
+    }
+    Ok(())
 }
 
 fn save_enriched_products_to_file(products: Vec<Product>) -> Result<(), String> {
@@ -139,6 +207,10 @@ struct Product {
     price: f64,
     price_cost: Option<f64>,
     vendor_name: String,
+    description: String,
+    category: String,
+    subcategory: String,
+    pictures: Vec<String>,
 }
 
 #[derive(Debug)]
