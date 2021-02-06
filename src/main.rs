@@ -22,6 +22,7 @@ fn run() -> Result<(), Option<String>> {
     unsafe {
         VERBOSE = args.verbose;
     }
+    args.validate()?;
     printlnv!("Args are {:?}.", args);
     run::run(args)
 }

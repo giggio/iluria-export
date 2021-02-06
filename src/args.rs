@@ -11,6 +11,7 @@ pub struct Args {
     pub output_dir: Option<String>,
     pub output_products_file: String,
     pub output_variations_file: String,
+    pub force: bool,
 }
 
 impl Args {
@@ -118,6 +119,13 @@ impl Args {
                     .help("Sets the output file name for the variations file")
             )
             .arg(
+                Arg::with_name("force")
+                    .short("f")
+                    .long("force")
+                    .requires("output")
+                    .help("Overwrite output files if they exist"),
+            )
+            .arg(
                 Arg::with_name("v")
                     .short("v")
                     .long("verbose")
@@ -157,6 +165,7 @@ impl Args {
                 .or(Some("variations.csv"))
                 .unwrap()
                 .to_owned(),
+            force: args.is_present("force"),
         }
     }
 
@@ -181,6 +190,40 @@ impl Args {
                             .to_owned(),
                     ),
                 )
+            }
+        }
+    }
+    pub fn validate(&self) -> Result<(), String> {
+        let (products_file, variations_file) = self.get_output_files();
+        if Args::file_exists(&products_file)? && !self.force {
+            return Err(format!(
+                "Output products file exists at '{}', use --force to overwrite.",
+                products_file.unwrap()
+            ));
+        }
+        if Args::file_exists(&variations_file)? && !self.force {
+            return Err(format!(
+                "Output variations file exists at '{}', use --force to overwrite.",
+                variations_file.unwrap()
+            ));
+        }
+        Ok(())
+    }
+
+    fn file_exists(file_option: &Option<String>) -> Result<bool, String> {
+        match file_option {
+            None => Ok(false),
+            Some(file) => {
+                let path = std::path::Path::new(&file);
+                if path.exists() {
+                    if path.is_file() {
+                        Ok(true)
+                    } else {
+                        Err("Path is a directory".to_owned())
+                    }
+                } else {
+                    Ok(false)
+                }
             }
         }
     }

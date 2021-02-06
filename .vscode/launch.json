@@ -22,7 +22,12 @@
       "args": [
         "${workspaceFolder}/../iluria-relatorio-de-estoque-dos-produtos.csv",
         "https://loja.studiooh.com.br",
-        "--verbose"
+        "--verbose",
+        "--force",
+        "--limit",
+        "5",
+        "-o",
+        "/tmp/iluria/",
       ],
       "cwd": "${workspaceFolder}"
     },
