@@ -49,7 +49,30 @@ fn convert_enconding(file: File) -> std::io::Result<String> {
 fn get_products_from_variations(
     products_with_variation: Vec<ProductWithVariation>,
 ) -> Vec<Product> {
-    todo!()
+    products_with_variation
+        .into_iter()
+        .fold(vec![], |mut ps, product_with_variation| {
+            let variation = Variation {
+                one: product_with_variation.variacao_1,
+                two: product_with_variation.variacao_2,
+                three: product_with_variation.variacao_3,
+            };
+            let product_id = product_with_variation.produto;
+            if let Some(product) = ps.iter_mut().find(|p2| p2.id == product_id) {
+                product.variations.push(variation);
+            } else {
+                ps.push(Product {
+                    id: product_id,
+                    name: product_with_variation.nome,
+                    variations: vec![variation],
+                    stock: product_with_variation.estoque,
+                    price: product_with_variation.preco,
+                    price_cost: product_with_variation.preco_de_custo,
+                    vendor_name: product_with_variation.nome_do_fornecedor,
+                });
+            }
+            ps
+        })
 }
 
 fn enrich_products(products: &Vec<Product>) -> Result<(), String> {
@@ -57,6 +80,9 @@ fn enrich_products(products: &Vec<Product>) -> Result<(), String> {
 }
 
 fn save_enriched_products_to_file(products: Vec<Product>) -> Result<(), String> {
+    for product in products.into_iter() {
+        println!("{:?}", product);
+    }
     todo!()
 }
 
@@ -104,4 +130,20 @@ struct ProductWithVariation {
     nome_do_fornecedor: String,
 }
 
-struct Product {}
+#[derive(Debug)]
+struct Product {
+    id: String,
+    name: String,
+    variations: Vec<Variation>,
+    stock: Option<u32>,
+    price: f64,
+    price_cost: Option<f64>,
+    vendor_name: String,
+}
+
+#[derive(Debug)]
+struct Variation {
+    one: String,
+    two: String,
+    three: String,
+}
