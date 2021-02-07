@@ -12,6 +12,7 @@ pub struct Args {
     pub output_products_file: String,
     pub output_variations_file: String,
     pub force: bool,
+    pub simulate: bool,
 }
 
 impl Args {
@@ -126,6 +127,12 @@ impl Args {
                     .help("Overwrite output files if they exist"),
             )
             .arg(
+                Arg::with_name("simulate")
+                    .short("s")
+                    .long("simulate")
+                    .help("Simulate calls to scraping endpoints"),
+            )
+            .arg(
                 Arg::with_name("v")
                     .short("v")
                     .long("verbose")
@@ -166,6 +173,7 @@ impl Args {
                 .unwrap()
                 .to_owned(),
             force: args.is_present("force"),
+            simulate: args.is_present("simulate"),
         }
     }
 

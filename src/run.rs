@@ -1,4 +1,5 @@
-use crate::args::Args;
+use crate::{args::Args, VERBOSE};
+use indicatif::{ProgressBar, ProgressStyle};
 use scraper::{Html, Selector};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use std::io::Read;
@@ -8,14 +9,18 @@ use std::{
 };
 
 pub fn run(args: Args) -> Result<(), Option<String>> {
+    printlnv!("Starting...");
+    start_progress_bar(100);
     let products_with_variation = get_products_with_variations(&args.file)?;
-    for product_with_variation in products_with_variation.iter() {
-        printlnv!("{:?}", product_with_variation);
-    }
+    inc_progress_bar(10);
     let mut products = get_products_from_variations(products_with_variation, args.limit);
-    enrich_products(&args.url, &mut products)?;
+    inc_progress_bar(10);
+    set_progress_bar_len((products.len() as f64 / 0.8).round() as u64);
+    enrich_products(&args.url, &mut products, args.simulate)?;
     let (products_file, variations_file) = args.get_output_files();
     save_enriched_products_to_file(products, products_file, variations_file)?;
+    finish_progress_bar();
+    printlnv!("Done!");
     Ok(())
 }
 
@@ -38,6 +43,15 @@ fn get_products_with_variations(file: &str) -> Result<Vec<ProductWithVariation>,
         let product: ProductWithVariation =
             result.map_err(|e| format!("Could not map row: {}", e))?;
         products.push(product);
+    }
+    unsafe {
+        if VERBOSE {
+            printlnpb!("Products read from csv file:");
+            for product_with_variation in products.iter() {
+                printlnpb!("{:?}", product_with_variation);
+            }
+            printlnpb!("");
+        }
     }
     Ok(products)
 }
@@ -90,10 +104,21 @@ fn get_products_from_variations(
         })
 }
 
-fn enrich_products(base_url: &str, products: &mut Vec<Product>) -> Result<(), String> {
+fn enrich_products(
+    base_url: &str,
+    products: &mut Vec<Product>,
+    simulate: bool,
+) -> Result<(), String> {
     for product in products.iter_mut() {
         let url = format!("{}/pd-{}", base_url, product.id);
-        printlnv!("Making web request at: {}", url);
+        inc_progress_bar(1);
+        if simulate {
+            printlnv!("Simulating web request at: {}", url);
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            continue;
+        } else {
+            printlnv!("Making web request at: {}", url);
+        }
         let client = reqwest::blocking::Client::new();
         let resp = client
             .get(&url)
@@ -247,9 +272,9 @@ fn save_enriched_products_to_file(
     let product_text = String::from_utf8(product_wtr.into_inner().map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     match products_file {
-        None => println!("Products:\n{}", product_text),
-        Some(file) => fs::write(file, encode_ansi(product_text))
-            .map_err(|e| format!("Error products writing file: {}", e))?,
+        None => printlnpb!("Products:\n{}", product_text),
+        Some(file) => fs::write(&file, encode_ansi(product_text))
+            .map_err(|e| format!("Error when writing products file '{}': {}", file, e))?,
     }
     let mut variation_wtr = csv::Writer::from_writer(vec![]);
     for v in variation_export.into_iter() {
@@ -260,9 +285,9 @@ fn save_enriched_products_to_file(
     let variation_text = String::from_utf8(variation_wtr.into_inner().map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     match variations_file {
-        None => println!("Variations:\n{}", variation_text),
-        Some(file) => fs::write(file, encode_ansi(variation_text))
-            .map_err(|e| format!("Error variations writing file: {}", e))?,
+        None => printlnpb!("Variations:\n{}", variation_text),
+        Some(file) => fs::write(&file, encode_ansi(variation_text))
+            .map_err(|e| format!("Error when writing variations file '{}': {}", file, e))?,
     }
     Ok(())
 }
@@ -310,6 +335,45 @@ struct ProductWithVariation {
     #[serde(rename = "Nome do fornecedor")]
     nome_do_fornecedor: String,
 }
+
+fn start_progress_bar(len: u64) {
+    unsafe {
+        let bar = ProgressBar::new(len);
+        bar.set_style(ProgressStyle::default_bar().template("{wide_bar}"));
+        BAR = Some(bar);
+    }
+}
+
+fn set_progress_bar_len(len: u64) {
+    unsafe {
+        if let Some(bar) = &BAR {
+            let old_position = bar.position() as f64;
+            let old_len = bar.length() as f64;
+            bar.set_position(0); // todo: remove this and set them pos and len together when https://github.com/mitsuhiko/indicatif/issues/236 is done
+            bar.set_length(len);
+            bar.set_position((old_position / old_len * (len as f64)).round() as u64);
+        }
+    }
+}
+
+fn inc_progress_bar(amount: u64) {
+    unsafe {
+        if let Some(bar) = &BAR {
+            bar.inc(amount);
+        }
+    }
+}
+
+fn finish_progress_bar() {
+    unsafe {
+        if let Some(bar) = &BAR {
+            bar.finish();
+            BAR = None;
+        }
+    }
+}
+
+pub static mut BAR: Option<ProgressBar> = None;
 
 #[derive(Debug)]
 struct Product {
