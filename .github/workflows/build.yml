@@ -4,8 +4,28 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "*"
 
 jobs:
+  create_release:
+    name: Create release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+
   build:
     strategy:
       matrix:
@@ -13,8 +33,19 @@ jobs:
         - macos-latest
         - ubuntu-latest
         - windows-latest
+        include:
+          - os: ubuntu-latest
+            bin_name: iluria-export
+            asset_name: iluria-export
+          - os: macos-latest
+            bin_name: iluria-export
+            asset_name: iluria-export_mac
+          - os: windows-latest
+            bin_name: iluria-export.exe
+            asset_name: iluria-export.exe
     name: Build
     runs-on: ${{matrix.os}}
+    needs: create_release
     steps:
       - name: checkout code
         uses: actions/checkout@v2
@@ -53,3 +84,15 @@ jobs:
         with:
           command: build
           args: --release
+
+      - name: Upload Release Asset
+        id: upload-release-asset
+        uses: actions/upload-release-asset@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_release.outputs.upload_url }}
+          asset_path: ./target/release/${{ matrix.bin_name }}
+          asset_name: ${{ matrix.asset_name }}
+          asset_content_type: application/octet-stream
