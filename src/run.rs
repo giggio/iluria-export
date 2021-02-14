@@ -74,20 +74,15 @@ fn get_products_from_variations(
     products_with_variation
         .into_iter()
         .fold(vec![], |mut ps, product_with_variation| {
-            let variation = Variation {
-                one: product_with_variation.variacao_1,
-                two: product_with_variation.variacao_2,
-                three: product_with_variation.variacao_3,
-            };
             let product_id = product_with_variation.produto;
-            if let Some(product) = ps.iter_mut().find(|p2| p2.id == product_id) {
-                product.variations.push(variation);
-            } else if limit == 0 || (ps.len() as u32) < limit {
+            if ps.iter_mut().find(|p2| p2.id == product_id).is_none() && limit == 0
+                || (ps.len() as u32) < limit
+            {
                 // todo: work around usize limit in products, see ps.len above
                 ps.push(Product {
                     id: product_id,
                     name: product_with_variation.nome,
-                    variations: vec![variation],
+                    variations: vec![],
                     stock: product_with_variation.estoque,
                     price: product_with_variation.preco,
                     price_cost: product_with_variation.preco_de_custo,
@@ -159,23 +154,17 @@ fn save_enriched_products_to_file(
                 },
                 p.variations
                     .into_iter()
-                    .filter_map(|v| {
-                        if v.one.is_empty() {
-                            None
-                        } else {
-                            Some(VariationCsvExport {
-                                id: "".to_owned(),
-                                product_id: i.to_string(),
-                                type1: "var1".to_owned(),
-                                name1: v.one,
-                                type2: if v.two.is_empty() {
-                                    None
-                                } else {
-                                    Some("var2".to_owned())
-                                },
-                                name2: if v.two.is_empty() { None } else { Some(v.two) },
-                            })
-                        }
+                    .map(|v| VariationCsvExport {
+                        id: "".to_owned(),
+                        product_id: i.to_string(),
+                        type1: v.type1,
+                        name1: v.name1,
+                        type2: v.type2,
+                        name2: v.name2,
+                        type3: v.type3,
+                        name3: v.name3,
+                        price: v.price,
+                        picture: v.picture,
                     })
                     .collect::<Vec<VariationCsvExport>>(),
             )
@@ -275,9 +264,14 @@ pub struct Product {
 
 #[derive(Debug)]
 pub struct Variation {
-    pub one: String,
-    pub two: String,
-    pub three: String,
+    pub type1: String,
+    pub type2: Option<String>,
+    pub type3: Option<String>,
+    pub name1: String,
+    pub name2: Option<String>,
+    pub name3: Option<String>,
+    pub price: f64,
+    pub picture: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -307,4 +301,8 @@ struct VariationCsvExport {
     name1: String,
     type2: Option<String>,
     name2: Option<String>,
+    type3: Option<String>,
+    name3: Option<String>,
+    pub price: f64,
+    pub picture: Option<String>,
 }

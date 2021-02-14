@@ -29,6 +29,9 @@
         "-o",
         "/tmp/iluria/",
       ],
+      "sourceLanguages": [
+        "rust"
+      ],
       "cwd": "${workspaceFolder}"
     },
     {
