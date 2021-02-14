@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use crate::{progressbar, run::Product, run::Variation};
+use crate::progressbar;
 use scraper::{Html, Selector};
 
 pub fn enrich_products(
     base_url: &str,
-    products: &mut Vec<Product>,
+    products: &mut Vec<crate::run::Product>,
     simulate: bool,
 ) -> Result<(), String> {
     for product in products.iter_mut() {
@@ -42,7 +42,7 @@ pub fn enrich_products(
         product.pictures = get_pictures(&fragment, &product.id)?;
         product.variations = get_variations(&fragment, &product.id)?
             .into_iter()
-            .map(|v| Variation {
+            .map(|v| crate::run::Variation {
                 type1: v.type1,
                 type2: v.type2,
                 type3: v.type3,

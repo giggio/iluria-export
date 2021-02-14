@@ -2,6 +2,8 @@
 mod macros;
 mod args;
 mod enricher;
+mod exporter;
+mod importer;
 mod progressbar;
 mod run;
 use args::Args;
