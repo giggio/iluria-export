@@ -33,47 +33,63 @@ pub fn enrich_products(
             .text()
             .map_err(|e| format!("Could not get body: {}", e))?;
         let fragment = Html::parse_document(&body);
-        let description_selector =
-            Selector::parse("div:not([id]).product-description").map_err(|e| {
-                format!(
-                    "Could not get description for product {}: {:?}",
-                    product.id, e
-                )
-            })?;
-        let description: String = if let Some(d) = fragment.select(&description_selector).next() {
-            d.inner_html()
-        } else {
-            "".to_owned()
-        };
-        product.description = description;
-        let category_selector = Selector::parse(".breadcrumb a")
-            .map_err(|e| format!("Could not get category for product {}: {:?}", product.id, e))?;
-        let category_and_subcategory: Vec<_> =
-            fragment.select(&category_selector).skip(2).collect();
-        product.category = if !category_and_subcategory.is_empty() {
-            category_and_subcategory[0].text().collect()
-        } else {
-            "".to_owned()
-        };
-        product.subcategory = if category_and_subcategory.len() == 2 {
-            category_and_subcategory[1].text().collect()
-        } else {
-            "".to_owned()
-        };
-        let images_selector = Selector::parse("#thumbsContainer img")
-            .map_err(|e| format!("Could not get images for product {}: {:?}", product.id, e))?;
-        product.pictures = fragment
-            .select(&images_selector)
-            .filter_map(|i| i.value().attr("mainpictureurl"))
-            .map(|s| {
-                if s.starts_with('/') {
-                    format!("http:{}", s)
-                } else {
-                    s.to_owned()
-                }
-            })
-            .collect();
+        product.description = get_description(&fragment, &product.id)?;
+        let (category, subcategory) = get_category(&fragment, &product.id)?;
+        product.category = category;
+        product.subcategory = subcategory;
+        product.pictures = get_pictures(fragment, &product.id)?;
         printlnv!("Enriched product: {:?}", product);
     }
     Ok(())
+}
+
+fn get_description(fragment: &Html, product_id: &str) -> Result<String, String> {
+    let description_selector =
+        Selector::parse("div:not([id]).product-description").map_err(|e| {
+            format!(
+                "Could not get description for product {}: {:?}",
+                product_id, e
+            )
+        })?;
+    Ok(
+        if let Some(d) = fragment.select(&description_selector).next() {
+            d.inner_html()
+        } else {
+            "".to_owned()
+        },
+    )
+}
+
+fn get_category(fragment: &Html, product_id: &str) -> Result<(String, String), String> {
+    let category_selector = Selector::parse(".breadcrumb a")
+        .map_err(|e| format!("Could not get category for product {}: {:?}", product_id, e))?;
+    let category_and_subcategory: Vec<_> = fragment.select(&category_selector).skip(2).collect();
+    let category = if !category_and_subcategory.is_empty() {
+        category_and_subcategory[0].text().collect()
+    } else {
+        "".to_owned()
+    };
+    let subcategory = if category_and_subcategory.len() == 2 {
+        category_and_subcategory[1].text().collect()
+    } else {
+        "".to_owned()
+    };
+    Ok((category, subcategory))
+}
+
+fn get_pictures(fragment: Html, product_id: &str) -> Result<Vec<String>, String> {
+    let images_selector = Selector::parse("#thumbsContainer img")
+        .map_err(|e| format!("Could not get images for product {}: {:?}", product_id, e))?;
+    let pictures = fragment
+        .select(&images_selector)
+        .filter_map(|i| i.value().attr("mainpictureurl"))
+        .map(|s| {
+            if s.starts_with('/') {
+                format!("http:{}", s)
+            } else {
+                s.to_owned()
+            }
+        })
+        .collect();
+    Ok(pictures)
 }
