@@ -1,6 +1,4 @@
-use crate::{args::Args, VERBOSE};
-use indicatif::{ProgressBar, ProgressStyle};
-use scraper::{Html, Selector};
+use crate::{args::Args, enricher, progressbar, VERBOSE};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use std::io::Read;
 use std::{
@@ -10,16 +8,16 @@ use std::{
 
 pub fn run(args: Args) -> Result<(), Option<String>> {
     printlnv!("Starting...");
-    start_progress_bar(100);
+    progressbar::start_progress_bar(100);
     let products_with_variation = get_products_with_variations(&args.file)?;
-    inc_progress_bar(10);
+    progressbar::inc_progress_bar(10);
     let mut products = get_products_from_variations(products_with_variation, args.limit);
-    inc_progress_bar(10);
-    set_progress_bar_len((products.len() as f64 / 0.8).round() as u64);
-    enrich_products(&args.url, &mut products, args.simulate)?;
+    progressbar::inc_progress_bar(10);
+    progressbar::set_progress_bar_len((products.len() as f64 / 0.8).round() as u64);
+    enricher::enrich_products(&args.url, &mut products, args.simulate)?;
     let (products_file, variations_file) = args.get_output_files();
     save_enriched_products_to_file(products, products_file, variations_file)?;
-    finish_progress_bar();
+    progressbar::finish_progress_bar();
     printlnv!("Done!");
     Ok(())
 }
@@ -102,84 +100,6 @@ fn get_products_from_variations(
             }
             ps
         })
-}
-
-fn enrich_products(
-    base_url: &str,
-    products: &mut Vec<Product>,
-    simulate: bool,
-) -> Result<(), String> {
-    for product in products.iter_mut() {
-        let url = format!("{}/pd-{}", base_url, product.id);
-        inc_progress_bar(1);
-        if simulate {
-            printlnv!("Simulating web request at: {}", url);
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            continue;
-        } else {
-            printlnv!("Making web request at: {}", url);
-        }
-        let client = reqwest::blocking::Client::new();
-        let resp = client
-            .get(&url)
-            .header("user-agent", "Mozilla/5.0")
-            .send()
-            .map_err(|e| format!("Could not get at {}. Details: {}", url, e))?;
-        if !resp.status().is_success() {
-            return Err(format!(
-                "Request for product {} failed with status code {}",
-                product.id,
-                resp.status()
-            ));
-        }
-        let body = resp
-            .text()
-            .map_err(|e| format!("Could not get body: {}", e))?;
-        let fragment = Html::parse_document(&body);
-        let description_selector =
-            Selector::parse("div:not([id]).product-description").map_err(|e| {
-                format!(
-                    "Could not get description for product {}: {:?}",
-                    product.id, e
-                )
-            })?;
-        let description: String = if let Some(d) = fragment.select(&description_selector).next() {
-            // d.text().collect()
-            d.inner_html()
-        } else {
-            "".to_owned()
-        };
-        product.description = description;
-        let category_selector = Selector::parse(".breadcrumb a")
-            .map_err(|e| format!("Could not get category for product {}: {:?}", product.id, e))?;
-        let category_and_subcategory: Vec<_> =
-            fragment.select(&category_selector).skip(2).collect();
-        product.category = if !category_and_subcategory.is_empty() {
-            category_and_subcategory[0].text().collect()
-        } else {
-            "".to_owned()
-        };
-        product.subcategory = if category_and_subcategory.len() == 2 {
-            category_and_subcategory[1].text().collect()
-        } else {
-            "".to_owned()
-        };
-        let images_selector = Selector::parse("#thumbsContainer img")
-            .map_err(|e| format!("Could not get images for product {}: {:?}", product.id, e))?;
-        product.pictures = fragment
-            .select(&images_selector)
-            .filter_map(|i| i.value().attr("mainpictureurl"))
-            .map(|s| {
-                if s.starts_with('/') {
-                    format!("http:{}", s)
-                } else {
-                    s.to_owned()
-                }
-            })
-            .collect();
-        printlnv!("Enriched product: {:?}", product);
-    }
-    Ok(())
 }
 
 fn save_enriched_products_to_file(
@@ -338,65 +258,26 @@ struct ProductWithVariation {
     nome_do_fornecedor: String,
 }
 
-fn start_progress_bar(len: u64) {
-    unsafe {
-        let bar = ProgressBar::new(len);
-        bar.set_style(ProgressStyle::default_bar().template("{wide_bar}"));
-        BAR = Some(bar);
-    }
-}
-
-fn set_progress_bar_len(len: u64) {
-    unsafe {
-        if let Some(bar) = &BAR {
-            let old_position = bar.position() as f64;
-            let old_len = bar.length() as f64;
-            bar.set_position(0); // todo: remove this and set them pos and len together when https://github.com/mitsuhiko/indicatif/issues/236 is done
-            bar.set_length(len);
-            bar.set_position((old_position / old_len * (len as f64)).round() as u64);
-        }
-    }
-}
-
-fn inc_progress_bar(amount: u64) {
-    unsafe {
-        if let Some(bar) = &BAR {
-            bar.inc(amount);
-        }
-    }
-}
-
-fn finish_progress_bar() {
-    unsafe {
-        if let Some(bar) = &BAR {
-            bar.finish();
-            BAR = None;
-        }
-    }
-}
-
-pub static mut BAR: Option<ProgressBar> = None;
-
 #[derive(Debug)]
-struct Product {
-    id: String,
-    name: String,
-    variations: Vec<Variation>,
-    stock: Option<u32>,
-    price: f64,
-    price_cost: Option<f64>,
-    vendor_name: String,
-    description: String,
-    category: String,
-    subcategory: String,
-    pictures: Vec<String>,
+pub struct Product {
+    pub id: String,
+    pub name: String,
+    pub variations: Vec<Variation>,
+    pub stock: Option<u32>,
+    pub price: f64,
+    pub price_cost: Option<f64>,
+    pub vendor_name: String,
+    pub description: String,
+    pub category: String,
+    pub subcategory: String,
+    pub pictures: Vec<String>,
 }
 
 #[derive(Debug)]
-struct Variation {
-    one: String,
-    two: String,
-    three: String,
+pub struct Variation {
+    pub one: String,
+    pub two: String,
+    pub three: String,
 }
 
 #[derive(Debug, Serialize)]

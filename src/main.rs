@@ -1,6 +1,8 @@
 #[macro_use]
 mod macros;
 mod args;
+mod enricher;
+mod progressbar;
 mod run;
 use args::Args;
 
