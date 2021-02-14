@@ -222,6 +222,7 @@ fn save_enriched_products_to_file(
             (
                 ProductCsvExport {
                     id: i.to_string(),
+                    active: "Sim".to_owned(),
                     name: p.name,
                     stock: p.stock,
                     price: p.price,
@@ -243,6 +244,7 @@ fn save_enriched_products_to_file(
                             None
                         } else {
                             Some(VariationCsvExport {
+                                id: "".to_owned(),
                                 product_id: i.to_string(),
                                 type1: "var1".to_owned(),
                                 name1: v.one,
@@ -400,6 +402,7 @@ struct Variation {
 #[derive(Debug, Serialize)]
 struct ProductCsvExport {
     id: String,
+    active: String,
     name: String,
     stock: Option<u32>,
     price: f64,
@@ -417,6 +420,7 @@ struct ProductCsvExport {
 
 #[derive(Debug, Serialize)]
 struct VariationCsvExport {
+    id: String,
     product_id: String,
     type1: String,
     name1: String,
